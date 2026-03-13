@@ -25,7 +25,7 @@ api.interceptors.request.use(
 );
 
 export const scanAPI = {
-  uploadImage: async (formData) => {
+  scanImage: async (formData) => {
     const config = { headers: { 'Content-Type': 'multipart/form-data' } };
     const { data } = await api.post('/scans/image', formData, config);
     return data;

@@ -33,7 +33,7 @@ function checkFileType(file, cb) {
 // Multer initialization
 const upload = multer({
   storage,
-  limits: { fileSize: 5000000 }, // 5MB Limit
+  limits: { fileSize: 20000000 }, // 20MB Limit
   fileFilter: function (req, file, cb) {
     checkFileType(file, cb);
   },

@@ -29,6 +29,8 @@ app.get('/api', (req, res) => {
   res.send('FoodSafe API is running...');
 });
 
+const { errorHandler } = require('./middleware/errorMiddleware');
+
 // Serve frontend dist in production
 if (process.env.NODE_ENV === 'production') {
   const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
@@ -37,11 +39,10 @@ if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => {
     res.sendFile(path.resolve(frontendPath, 'index.html'));
   });
-} else {
-  app.get('/', (req, res) => {
-    res.send('FoodSafe API is running...');
-  });
 }
+
+// Global Error Handler
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 

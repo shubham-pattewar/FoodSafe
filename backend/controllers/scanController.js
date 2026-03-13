@@ -1,8 +1,8 @@
 const Product = require('../models/Product');
 const Scan = require('../models/Scan');
 const { extractTextFromImage } = require('../services/ocrService');
-const { parseIngredients } = require('../services/ingredientParser');
-const { calculateScore } = require('../services/scoringEngine');
+const { parseTextData } = require('../services/ingredientParser');
+const { calculateAdvancedScore } = require('../services/scoringEngine');
 const { fetchProductByBarcode } = require('../services/openFoodFactsService');
 
 // @desc    Upload image, extract text, and analyze product
@@ -16,22 +16,36 @@ const scanImage = async (req, res) => {
   try {
     const imagePath = req.file.path;
 
-    // 1. Extract text via OCR
-    const extractedText = await extractTextFromImage(imagePath);
+    // 1. Image Preprocessing & OCR Extraction (via service)
+    const ocrResult = await extractTextFromImage(imagePath);
+    const extractedText = ocrResult.text;
+    const confidenceScore = ocrResult.score;
     
-    // 2. Parse ingredients list
-    const ingredients = parseIngredients(extractedText);
+    // 2. Text Cleaning, Detection & Extraction
+    const parsedData = parseTextData(extractedText);
+    const ingredients = parsedData.ingredients;
+    const nutrition = parsedData.nutrition;
     
+    // 10. Error Handling Fallback
     if (ingredients.length === 0) {
-      return res.status(400).json({ message: 'No ingredients found in the image. Please try a clearer picture.' });
+      return res.status(400).json({ 
+        message: 'No ingredients found in the image. Please try a clearer picture or manually edit the ingredients.',
+        extractedText,
+        confidenceScore
+      });
     }
 
-    // 3. Calculate score
-    const result = calculateScore(ingredients);
+    // Pass structured nutrition mapped to what calculateAdvancedScore expects (assuming 100g base for simplicity here)
+    const nutritionalValues = {
+      sugars_100g: nutrition.sugar ? parseFloat(nutrition.sugar) : 0,
+      sodium_100g: nutrition.sodium ? parseFloat(nutrition.sodium) / 1000 : 0, // pass as grams, internal engine converts back to mg
+    };
 
-    // 4. Save product to DB
+    // 3. Risk Detection Integration 
+    const result = calculateAdvancedScore(ingredients, nutritionalValues);
+
     const product = await Product.create({
-      name: 'Scanned Product', // Default name, user might update it later
+      name: 'Scanned Product', 
       ingredients,
       hiddenSugars: result.hiddenSugars,
       additives: result.additives,
@@ -39,17 +53,25 @@ const scanImage = async (req, res) => {
       warnings: result.warnings
     });
 
-    // 5. Save scan history
     const scan = await Scan.create({
       userId: req.user._id,
       productId: product._id,
       scanData: result
     });
 
-    res.status(201).json({ product, scanId: scan._id });
+    // 8. Output Format
+    res.status(201).json({
+      product,
+      scanId: scan._id,
+      ingredients,
+      nutrition,
+      additives: result.additives,
+      extractedText,
+      confidenceScore
+    });
 
   } catch (error) {
-    console.error(error);
+    console.error('Scan Error:', error);
     res.status(500).json({ message: error.message || 'Server Error' });
   }
 };
@@ -74,8 +96,12 @@ const scanBarcode = async (req, res) => {
       return res.status(400).json({ message: 'No ingredients found for this product in the database.' });
     }
 
-    // 2. Calculate score (could use nutritional values if fetched)
-    const result = calculateScore(ingredients);
+    // 2. Calculate score 
+    const nutritionalValues = {
+      sugars_100g: data.nutriments?.sugars_100g || 0,
+      sodium_100g: data.nutriments?.sodium_100g ? data.nutriments.sodium_100g / 1000 : 0
+    };
+    const result = calculateAdvancedScore(ingredients, nutritionalValues);
 
     // 3. Save or update product in DB
     const product = await Product.create({
